@@ -1,0 +1,8 @@
+dist/
+build/
+bin/
+
+node_modules/
+env.overrides.js
+.npm/
+.vscode/
