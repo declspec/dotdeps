@@ -175,7 +175,7 @@
   }
 
   .packages {
-    flex: 1 0 auto;
+    flex: 0 0 auto;
     max-height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
