@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@types/cytoscape": "^3.19.9",
-    "bootstrap": "^5.2.2",
     "cytoscape": "^3.23.0",
     "cytoscape-dagre": "^2.4.0",
     "vue": "^3.2.38"
