@@ -1,25 +1,24 @@
 <script setup lang="ts">
-  import { withDefaults, computed, onMounted, watch, ref, type VNodeRef } from 'vue';
-  import cytoscape, { type ElementsDefinition } from 'cytoscape';
-  import * as dagre from 'cytoscape-dagre';
+  import { withDefaults, computed, watch, ref } from 'vue';
+  import type { ElementsDefinition } from 'cytoscape';
 
   import { createPackageGraph, type ProjectAssets, type PackageGraph } from '@/lib/packages';
-  import { compare as compareSemver } from '@/lib/semver';
+  import Cytoscape from './Cytoscape.vue';
 
   export interface Props {
     projectAssets: ProjectAssets | null
   };
 
-  const COLOR_PROJECT = '#ffd507';
+  const COLOR_PROJECT = '#189b18';
   const COLOR_RESOLVED = '#01cbd5';
   const COLOR_UNRESOLVED = '#9d9d9d';
+  const COLOR_TARGET = '#ffd507';
 
   const props = withDefaults(defineProps<Props>(), {
     projectAssets: null
   });
 
-  const elRef = ref<VNodeRef | null>(null);
-  const cyRef = ref<cytoscape.Core | null>(null);
+  const elementsRef = ref<ElementsDefinition | null>(null);
 
   const graphRef = computed(() => {
     const assets = props.projectAssets;
@@ -30,8 +29,8 @@
     const keys = Object.keys(assets.projectFileDependencyGroups);
 
     return createPackageGraph(assets.targets[keys[0]], {
-      name: 'Project',
-      version: '1.0.0',
+      name: '.root',
+      version: assets.project.version,
       dependencies: assets.projectFileDependencyGroups[keys[0]]
         .map(s => s.split(' ')[0])
     });
@@ -44,57 +43,32 @@
       return null;
 
     const packageIds = Object.keys(graph)
+      .filter(pid => pid[0] !== '.') // filter out 'hidden' packages (i.e. .root)
       .sort();
 
-    return packageIds.map(id => {
+    const packages = packageIds.map(id => {
       const node = graph[id];
 
       return {
         id,
         name: node.name,
         resolvedVersion: node.resolvedVersion,
-        otherVersions: Object.keys(node.versionRefs)
-          .filter(v => v !== node.resolvedVersion)
-          .sort(compareSemver)
+        totalVersions: Object.keys(node.versionRefs).length,
+        // TODO: Make this more robust, '.root' was just a name I came up with
+        isProjectDependency: node.versionRefs[node.resolvedVersion]
+          .some(id => id.indexOf('.root/') === 0),
       };
-    })
-  })
+    });
 
-  onMounted(() => {
-    cytoscape.use(dagre);
-
-    cyRef.value = cytoscape({
-      container: elRef.value,
-      userZoomingEnabled: true,
-      style: [
-        { 
-          selector: 'node',
-          style: {
-            'label': 'data(name)',
-            'background-color': 'data(color)',
-            'color': 'white',
-            'font-size': '0.8em'
-          }
-        },
-        {
-          selector: 'edge',
-          style: {
-            'width': 2,
-            'label': 'data(label)',
-            'color': 'white',
-            'line-color': 'data(color)',
-            'target-arrow-color': 'data(color)',
-            'target-arrow-shape': 'triangle',
-            'curve-style': 'unbundled-bezier',
-            'font-size': '0.6em'
-          }
-        }
-      ]
+    return packages.sort((p1, p2) => {
+      return p1.isProjectDependency == p2.isProjectDependency
+        ? p1.name.localeCompare(p2.name)
+        : (p1.isProjectDependency ? -1 : 1);
     });
   });
 
   // Clear the current dependency visualisation if the underlying graph changes
-  watch(() => graphRef.value, () => cyRef.value?.elements().remove())
+  watch(() => graphRef.value, () => elementsRef.value = null);
 
   function computeElements(graph: PackageGraph, packageId: string) {
     const elements: ElementsDefinition = {
@@ -116,26 +90,26 @@
       const key = `${next.id}/${next.version}`;
       const parents = node.versionRefs[next.version];
 
-      console.log('parents', parents);
-
       // ensure the package node exists
       let existingNode = nodeMap[next.id];
 
       if (existingNode == null) {
-        existingNode = nodeMap[next.id] = {
+        existingNode = {
           data: {
             id: next.id,
             name: node.name,
-            color: COLOR_UNRESOLVED
+            color: next.id === packageId ? COLOR_TARGET : COLOR_UNRESOLVED
           }
         };
 
+        nodeMap[next.id] = existingNode;
         elements.nodes.push(existingNode);
       }
 
-      // Update the node color if any paths are pointing to the resolved version
-      console.log(next, node);
-      if (next.version === node.resolvedVersion) {
+      // Update the node color depending on what type it is
+      if (next.id === packageId)
+        existingNode.data.color = COLOR_TARGET;
+      else if (next.version === node.resolvedVersion) {
         existingNode.data.color = node.versionRefs[next.version].length === 0 
           ? COLOR_PROJECT
           : COLOR_RESOLVED;
@@ -143,7 +117,6 @@
 
       for (const parentKey of parents) {
         const [ parentId, parentVersion ] = parentKey.split('/');
-        //const parentNode = graph[parentId];
 
         if (!computedPaths.has(parentKey)) {
           stack.push({ id: parentId, version: parentVersion });
@@ -156,137 +129,86 @@
             source: parentId,
             target: next.id,
             label: next.version,
-            color: next.version === node.resolvedVersion
-              ? COLOR_RESOLVED
-              : COLOR_UNRESOLVED
+            color: parentId === '.root'
+              ? COLOR_PROJECT
+              : (next.version === node.resolvedVersion
+                ? COLOR_RESOLVED
+                : COLOR_UNRESOLVED)
           }
         });
       }
     }
 
-    console.log(elements);
     return elements;
   }
 
-  function renderDependencies(packageId: string, packageVersion: string) {
-    if (cyRef.value == null)
-      throw new Error('cytoscape not initialized');
-
+  function renderDependencies(packageId: string) {
     if (graphRef.value == null)
       throw new Error('graph not initialized');
-
-    const cy = cyRef.value;
-    const elements = computeElements(graphRef.value, packageId, packageVersion);
-/*
-    const graph = graphRef.value;
-    const cy = cyRef.value;
-
-    const node = graph[packageId];
-    const versionRefs = [ [ packageId, node.versionRefs[packageVersion] ] ];
-
-    const elements: ElementsDefinition = { 
-      nodes: [], 
-      edges: []
-    };
-
-    // Add the starting node
-    elements.nodes.push({
-      data: {
-        id: packageId,
-        name: node.name,
-        color: 'red'
-      }
-    });
-
-    while (versionRefs.length > 0) {
-      const [ packageId, refs ] = versionRefs.pop()!;
-
-      for (const parentKey of refs) {
-        const [ parentId, parentVersion ] = parentKey.split('/');
-        const parentNode = graph[parentId];
-
-        versionRefs.push([ parentId, parentNode.versionRefs[parentVersion] ]);
-
-        if (!elements.nodes.some(n => n.data.id === parentId)) {
-          elements.nodes.push({
-            data: {
-              id: parentId,
-              name: graph[parentId].name,
-              color: parentNode.versionRefs[parentVersion].length === 0 ? 'green' : '#ccc'
-            }
-          });
-        }
-        
-        if (!elements.edges.some(e => e.data.source === packageId && e.data.target === parentId)) {
-          elements.edges.push({
-            data: {
-              id: `${packageId}+${parentId}`,
-              source: parentId,
-              target: packageId as string
-            }
-          });
-        }
-      }
-    }
-
-    elements.nodes.reverse();
-*/
-    cy.elements().remove();
-    cy.add(elements);
-
-    const layout = cy.layout({
-      name: 'dagre',
-      avoidOverlap: true,
-      nodeDimensionsIncludeLabels: true,
-      
-    } as any);
-
-    layout.run();
+    
+    elementsRef.value = computeElements(graphRef.value, packageId);
   }
 </script>
 
 <template>
-  <div class="visualiser">
+  <div class="visualiser" v-if="packagesRef">
     <ul class="packages">
-      <li v-for="pkg in packagesRef" :title="pkg.name">
-        {{ pkg.name }}<br/>
-        <a href="" @click.prevent="renderDependencies(pkg.id, pkg.resolvedVersion)">{{ pkg.resolvedVersion }}</a>
-        <template v-if="pkg.otherVersions.length > 0">
-          &nbsp; | &nbsp;
-          <a href="" 
-            v-for="version in pkg.otherVersions" 
-            @click.prevent="renderDependencies(pkg.id, version)"
-          >{{ version }}</a>
-        </template>
+      <li v-for="pkg in packagesRef" :title="pkg.name" :class="{ 'project': pkg.isProjectDependency }" @click.prevent="renderDependencies(pkg.id)">
+        <span class="package-name">{{ pkg.name }}</span> <span class="package-version">{{ pkg.resolvedVersion }}</span> <sup class="extra-versions" v-if="pkg.totalVersions > 1">+{{ pkg.totalVersions - 1 }}</sup>
       </li>
     </ul>
-    <div class="graph" ref="elRef"></div>
+    <Cytoscape :elements="elementsRef" class="graph" />
   </div>
 </template>
 
 <style scoped>
-  ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
   .visualiser {
     display: flex;
     flex-direction: row;
-    height: 100vh;
-    width: 100vw;
+    height: 100%;
+    width: 100%;
   }
 
   .graph {
-    flex: 1;
-    max-height: 100vh;
+    flex: 1 1 auto;
+    max-height: 100%;
   }
 
   .packages {
-    width: 30%;
-    flex: 0 0 auto;
-    max-height: 100vh;
+    flex: 1 0 auto;
+    max-height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
+    text-overflow: ellipsis;
+    padding: 1rem 1.5rem 1rem;
+    margin: 0;
+  }
+
+  .packages li {
+    list-style: none;
+    margin: 0.3rem 0;
+    padding: 0;
+    position: relative;
+    cursor: pointer;
+  }
+
+  .packages li.project::before {
+    content: 'P';
+    position: absolute;
+    font-family: 'Courier New', Courier, monospace;
+    color: #189b18;
+    font-size: 1rem;
+    font-weight: bold;
+    left: -1rem;
+  }
+
+  .packages .package-version {
+    color: #01cbd5;
+  }
+
+  .packages .extra-versions {
+    vertical-align: top;
+    font-size: 0.75rem;
+    color: #d58a01;
   }
 </style>

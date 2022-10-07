@@ -1,6 +1,11 @@
 <template>
-  <div class="dropzone" @dragover.prevent @drop="onDrop">
-    <Visualiser :project-assets="projectAssets" />
+  <div class="main">
+    <nav class="header">
+      <h3>.NET Dependency Visualiser</h3>
+    </nav>
+    <div class="content" @dragover.prevent @drop="onDrop">
+      <Visualiser :project-assets="projectAssets" />
+    </div>
   </div>
 </template>
 
@@ -30,8 +35,23 @@
 </script>
 
 <style scoped>
-  .dropzone {
-    width: 100vw;
-    height: 100vh;
+  .main {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .main .header {
+    flex: 0 0 auto;
+    background-color: #3c5e8d;
+    min-height: 3rem;
+    text-align: center;
+    color: white;
+  }
+
+  .main .content {
+    flex: 1 1 auto;
+    overflow-y: auto;
   }
 </style>
