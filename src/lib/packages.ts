@@ -1,53 +1,72 @@
-export type PackageName = string;
 export type PackageId = string;
+export type PackageKey = string;
 export type VersionNumber = string;
 
 export interface ProjectAssets {
     version: string;
+    projectFileDependencyGroups: {
+        [key: string]: string[];
+    }
     targets: {
         [key: string]: ResolvedPackageHash
     }
 };
 
 export interface ResolvedPackageHash {
-    [key: PackageId]: ResolvedPackage
+    [key: PackageKey]: ResolvedPackage
 };
 
 export interface ResolvedPackage {
     type: "package" | "project";
     dependencies?: {
-        [key: PackageName]: VersionNumber
+        [key: PackageId]: VersionNumber
     };
 };
 
 export interface PackageNode {
     name: string;
-    resolvedVersion: string;
+    resolvedVersion: VersionNumber;
     versionRefs: {
-        [key: VersionNumber]: PackageId[]
+        [key: VersionNumber]: PackageKey[]
     }
 };
 
 export interface PackageGraph {
-    [key: PackageName]: PackageNode
+    [key: PackageId]: PackageNode
 };
 
-export function createPackageGraph(resolvedPackages: ResolvedPackageHash) {
+export interface Project {
+    name: string;
+    version: string;
+    dependencies: string[];
+}
+
+export function createPackageGraph(resolvedPackages: ResolvedPackageHash, project: Project) {
     // Create a graph by traversing the top level resolved packages and
     //  determining where they are referenced from
     const graph: PackageGraph = {};
+
+    const projectKey = `${project.name.toLowerCase()}/${project.version}`;
+    const projectDependencyIds = project.dependencies.map(d => d.toLowerCase());
+
+    const projectNode = getOrAddGraphNode(graph, project.name);
+    getOrAddPackageVersion(projectNode, project.version);
+    projectNode.resolvedVersion = project.version;
 
     for (const [ packageKey, pkg ] of Object.entries(resolvedPackages)) {
         const [ packageName, packageVersion ] = packageKey.split('/');
 
         const packageNode = getOrAddGraphNode(graph, packageName);
+        const versionRefs = getOrAddPackageVersion(packageNode, packageVersion);
         packageNode.resolvedVersion = packageVersion;
-        getOrAddPackageVersion(packageNode, packageVersion);
+        
+        if (projectDependencyIds.some(d => d === packageName.toLowerCase()))
+            versionRefs.push(projectKey);
 
         if (pkg.dependencies != null) {
             for (const [ depName, depVersion ] of Object.entries(pkg.dependencies)) {
-                const versionRefs = getOrAddPackageVersion(getOrAddGraphNode(graph, depName), depVersion);
-                versionRefs.push(packageKey.toLowerCase());
+                const depRefs = getOrAddPackageVersion(getOrAddGraphNode(graph, depName), depVersion);
+                depRefs.push(packageKey.toLowerCase());
             }
         }
     }
@@ -55,28 +74,7 @@ export function createPackageGraph(resolvedPackages: ResolvedPackageHash) {
     return graph;
 }
 
-export function computeDependencyChains(packageGraph: PackageGraph, packageId: PackageId) {
-    return traverse([ ], packageGraph, packageId);
-
-    function traverse(chain: PackageId[], packageGraph: PackageGraph, packageId: PackageId) {
-        const [ packageKey, packageVersion ] = packageId.split('/');
-
-        const versionRefs = packageGraph[packageKey]
-            .versionRefs[packageVersion];
-
-        if (versionRefs.length === 0) 
-            return [ chain ];
-
-        return versionRefs.reduce((chains, parentId) => {
-            const clone = chain.slice();
-            clone.push(parentId);
-            Array.prototype.push.apply(chains, traverse(clone, packageGraph, parentId));
-            return chains;
-        }, []);
-    }
-}
-
-function getOrAddGraphNode(graph: PackageGraph, packageName: PackageName) {
+function getOrAddGraphNode(graph: PackageGraph, packageName: string) {
     const graphKey = packageName.toLowerCase();
 
     return graph[graphKey] || (graph[graphKey] = { 

@@ -10,6 +10,10 @@
     projectAssets: ProjectAssets | null
   };
 
+  const COLOR_PROJECT = '#ffd507';
+  const COLOR_RESOLVED = '#01cbd5';
+  const COLOR_UNRESOLVED = '#9d9d9d';
+
   const props = withDefaults(defineProps<Props>(), {
     projectAssets: null
   });
@@ -23,8 +27,14 @@
     if (assets == null)
       return null;
 
-    const targetKeys = Object.keys(assets.targets);
-    return createPackageGraph(assets.targets[targetKeys[0]]);
+    const keys = Object.keys(assets.projectFileDependencyGroups);
+
+    return createPackageGraph(assets.targets[keys[0]], {
+      name: 'Project',
+      version: '1.0.0',
+      dependencies: assets.projectFileDependencyGroups[keys[0]]
+        .map(s => s.split(' ')[0])
+    });
   });
 
   const packagesRef = computed(() => {
@@ -55,23 +65,28 @@
 
     cyRef.value = cytoscape({
       container: elRef.value,
-      userZoomingEnabled: false,
+      userZoomingEnabled: true,
       style: [
         { 
           selector: 'node',
           style: {
             'label': 'data(name)',
             'background-color': 'data(color)',
+            'color': 'white',
+            'font-size': '0.8em'
           }
         },
         {
           selector: 'edge',
           style: {
-            'width': 3,
-            'line-color': '#ccc',
-            'target-arrow-color': '#000',
+            'width': 2,
+            'label': 'data(label)',
+            'color': 'white',
+            'line-color': 'data(color)',
+            'target-arrow-color': 'data(color)',
             'target-arrow-shape': 'triangle',
-            'curve-style': 'bezier'
+            'curve-style': 'unbundled-bezier',
+            'font-size': '0.6em'
           }
         }
       ]
@@ -79,7 +94,79 @@
   });
 
   // Clear the current dependency visualisation if the underlying graph changes
-  watch(() => graphRef.value, () => cyRef.value?.elements().remove());
+  watch(() => graphRef.value, () => cyRef.value?.elements().remove())
+
+  function computeElements(graph: PackageGraph, packageId: string) {
+    const elements: ElementsDefinition = {
+      edges: [],
+      nodes: []
+    };
+
+    const computedPaths = new Set<string>();
+    const start = graph[packageId];
+    const nodeMap: { [key: string]: cytoscape.NodeDefinition } = {};
+    const stack: { id: string, version: string }[] = []// = [ { id: packageId, version: packageVersion } ];
+
+    for (const version of Object.keys(start.versionRefs))
+      stack.push({ id: packageId, version });
+
+    while (stack.length > 0) {
+      const next = stack.pop()!;
+      const node = graph[next.id];
+      const key = `${next.id}/${next.version}`;
+      const parents = node.versionRefs[next.version];
+
+      console.log('parents', parents);
+
+      // ensure the package node exists
+      let existingNode = nodeMap[next.id];
+
+      if (existingNode == null) {
+        existingNode = nodeMap[next.id] = {
+          data: {
+            id: next.id,
+            name: node.name,
+            color: COLOR_UNRESOLVED
+          }
+        };
+
+        elements.nodes.push(existingNode);
+      }
+
+      // Update the node color if any paths are pointing to the resolved version
+      console.log(next, node);
+      if (next.version === node.resolvedVersion) {
+        existingNode.data.color = node.versionRefs[next.version].length === 0 
+          ? COLOR_PROJECT
+          : COLOR_RESOLVED;
+      }
+
+      for (const parentKey of parents) {
+        const [ parentId, parentVersion ] = parentKey.split('/');
+        //const parentNode = graph[parentId];
+
+        if (!computedPaths.has(parentKey)) {
+          stack.push({ id: parentId, version: parentVersion });
+          computedPaths.add(parentKey);
+        }
+
+        elements.edges.push({
+          data: {
+            id: `${parentKey}+${key}`,
+            source: parentId,
+            target: next.id,
+            label: next.version,
+            color: next.version === node.resolvedVersion
+              ? COLOR_RESOLVED
+              : COLOR_UNRESOLVED
+          }
+        });
+      }
+    }
+
+    console.log(elements);
+    return elements;
+  }
 
   function renderDependencies(packageId: string, packageVersion: string) {
     if (cyRef.value == null)
@@ -88,6 +175,9 @@
     if (graphRef.value == null)
       throw new Error('graph not initialized');
 
+    const cy = cyRef.value;
+    const elements = computeElements(graphRef.value, packageId, packageVersion);
+/*
     const graph = graphRef.value;
     const cy = cyRef.value;
 
@@ -140,19 +230,18 @@
     }
 
     elements.nodes.reverse();
-
+*/
     cy.elements().remove();
     cy.add(elements);
 
     const layout = cy.layout({
-      name: 'breadthfirst',
-      directed: true,
+      name: 'dagre',
       avoidOverlap: true,
-      nodeDimensionsIncludeLabels: true
+      nodeDimensionsIncludeLabels: true,
+      
     } as any);
 
     layout.run();
-    cy.resize();
   }
 </script>
 
@@ -184,6 +273,8 @@
   .visualiser {
     display: flex;
     flex-direction: row;
+    height: 100vh;
+    width: 100vw;
   }
 
   .graph {

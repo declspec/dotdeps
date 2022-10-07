@@ -1,6 +1,11 @@
 // Import all of Bootstrap's CSS
 @import "~bootstrap/scss/bootstrap";
 
+body {
+    background-color: #1e1e1e;
+    color: #ccc;
+}
+
 #app {
     min-width: 100vw;
     min-height: 100vh;
