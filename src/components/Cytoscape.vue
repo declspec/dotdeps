@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { defineProps, withDefaults, ref, onMounted, watch, type VNodeRef } from 'vue';
+  import { withDefaults, ref, onMounted, watch, type VNodeRef } from 'vue';
   import cytoscape, { type ElementsDefinition } from 'cytoscape';
   import * as dagre from 'cytoscape-dagre';
 

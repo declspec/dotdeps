@@ -4,7 +4,8 @@
       <h3>.NET Dependency Visualiser</h3>
     </nav>
     <div class="content" @dragover.prevent @drop="onDrop">
-      <Visualiser :project-assets="projectAssets" />
+      <Visualiser v-if="projectAssets" :project-assets="projectAssets" />
+      <p v-else class="help">Please drag and drop a <pre>project.assets.json</pre> file into the window to begin.</p>
     </div>
   </div>
 </template>
@@ -53,5 +54,11 @@
   .main .content {
     flex: 1 1 auto;
     overflow-y: auto;
+  }
+
+  .help {
+    text-align: center;
+    width: 100%;
+    margin-top: 5rem;
   }
 </style>
