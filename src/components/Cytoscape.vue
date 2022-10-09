@@ -47,6 +47,7 @@
             'background-color': 'data(color)',
             'color': 'white',
             'font-size': '0.8em',
+            'text-valign': 'center'
           }
         },
         {
