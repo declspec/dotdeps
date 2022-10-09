@@ -1,13 +1,13 @@
 <script setup lang="ts">
   import { withDefaults, ref, onMounted, watch, type VNodeRef } from 'vue';
   import cytoscape, { type ElementsDefinition } from 'cytoscape';
-  import * as dagre from 'cytoscape-dagre';
+  import dagre from 'cytoscape-dagre';
 
   export interface Props {
     elements: ElementsDefinition | null;
   };
 
-  cytoscape.use(dagre as any); // TODO: find out why dagre's type definitions no longer match
+  cytoscape.use(dagre);
 
   const props = withDefaults(defineProps<Props>(), {
     elements: null

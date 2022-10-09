@@ -9,7 +9,8 @@ export default defineConfig({
   plugins: [vue()],
   base: '', // relative
   build: {
-    outDir: './docs'
+    outDir: './docs',
+    minify: 'terser'
   },
   resolve: {
     alias: {

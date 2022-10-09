@@ -54,7 +54,7 @@ export function createPackageGraph(resolvedPackages: ResolvedPackageHash, projec
   const projectNode = getOrAddGraphNode(graph, project.name);
   getOrAddPackageVersion(projectNode, project.version);
   projectNode.resolvedVersion = project.version;
-
+  
   for (const [packageKey, pkg] of Object.entries(resolvedPackages)) {
     const [packageName, packageVersion] = packageKey.split('/');
 
@@ -69,7 +69,6 @@ export function createPackageGraph(resolvedPackages: ResolvedPackageHash, projec
       for (const [depName, depVersion] of Object.entries(pkg.dependencies)) {
         // NOTE: Not comprehensive sanitisation
         const sanitisedVersion = depVersion.trim().replace(/^\[|\]$/g, '');
-        console.log(depVersion, sanitisedVersion);
         const depRefs = getOrAddPackageVersion(getOrAddGraphNode(graph, depName), sanitisedVersion);
         depRefs.push(packageKey.toLowerCase());
       }
