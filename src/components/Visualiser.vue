@@ -2,7 +2,7 @@
   import { withDefaults, computed, watch, ref } from 'vue';
   import type { ElementsDefinition } from 'cytoscape';
 
-  import { createPackageGraph, type ProjectAssets, type PackageGraph } from '@/lib/packages';
+  import { createPackageGraph, type ProjectAssets, type PackageGraph, getRootPackageId } from '@/lib/packages';
   import Cytoscape from './Cytoscape.vue';
 
   export interface Props {
@@ -29,7 +29,6 @@
     const keys = Object.keys(assets.projectFileDependencyGroups);
 
     return createPackageGraph(assets.targets[keys[0]], {
-      name: '.root',
       version: assets.project.version,
       dependencies: assets.projectFileDependencyGroups[keys[0]]
         .map(s => s.split(' ')[0])
@@ -41,6 +40,8 @@
 
     if (graph == null)
       return null;
+
+    const rootPrefix = getRootPackageId() + '/';
 
     const packageIds = Object.keys(graph)
       .filter(pid => pid[0] !== '.') // filter out 'hidden' packages (i.e. .root)
@@ -54,9 +55,8 @@
         name: node.name,
         resolvedVersion: node.resolvedVersion,
         totalVersions: Object.keys(node.versionRefs).length,
-        // TODO: Make this more robust, '.root' was just a name I came up with
         isProjectDependency: node.versionRefs[node.resolvedVersion]
-          .some(id => id.indexOf('.root/') === 0),
+          .some(id => id.indexOf(rootPrefix) === 0),
       };
     });
 
@@ -76,6 +76,7 @@
       nodes: []
     };
 
+    const rootId = getRootPackageId();
     const computedPaths = new Set<string>();
     const start = graph[packageId];
     const nodeMap: { [key: string]: cytoscape.NodeDefinition } = {};
@@ -129,7 +130,7 @@
             source: parentId,
             target: next.id,
             label: next.version,
-            color: parentId === '.root'
+            color: parentId === rootId
               ? COLOR_PROJECT
               : (next.version === node.resolvedVersion
                 ? COLOR_RESOLVED

@@ -38,9 +38,12 @@ export interface PackageGraph {
 };
 
 export interface Project {
-  name: string;
   version: string;
   dependencies: string[];
+}
+
+export function getRootPackageId() {
+  return '.root';
 }
 
 export function createPackageGraph(resolvedPackages: ResolvedPackageHash, project: Project) {
@@ -48,10 +51,11 @@ export function createPackageGraph(resolvedPackages: ResolvedPackageHash, projec
   //  determining where they are referenced from
   const graph: PackageGraph = {};
 
-  const projectKey = `${project.name.toLowerCase()}/${project.version}`;
+  const rootId = getRootPackageId();
+  const projectKey = `${rootId}/${project.version}`;
   const projectDependencyIds = project.dependencies.map(d => d.toLowerCase());
 
-  const projectNode = getOrAddGraphNode(graph, project.name);
+  const projectNode = getOrAddGraphNode(graph, rootId);
   getOrAddPackageVersion(projectNode, project.version);
   projectNode.resolvedVersion = project.version;
   
