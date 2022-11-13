@@ -1,0 +1,38 @@
+name: Index GitHub Advisories
+
+on:
+  workflow_call:
+    
+jobs:
+  index-database:
+    runs-on: [ ubuntu-22.04 ]
+    steps:
+      - name: Index GitHub Advisory Database
+        shell: bash
+        run: |
+          set -e
+
+          # Shallow copy the advisory database
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/github/advisory-database
+          cd advisory-database
+          git sparse-checkout init --cone
+          git sparse-checkout set advisories/github-reviewed # only care about reviewed advisories
+          cd advisories/github-reviewed
+
+          echo "Starting indexing of NuGet-related advisories"
+
+          # Find all NuGet-related vulnerabilities
+          find -name "*.json" -print0 | xargs -0 -I@ jq -r '. as $root
+              | .affected[] 
+              | select((.package.ecosystem | ascii_downcase) == "nuget") 
+              | [ $root.severity[0] 
+                  + { "id": $root.id, "severity": $root.database_specific.severity, "package": .package.name } 
+                  + (reduce .ranges[0].events[] as $e ({}; . + $e)) ]
+              | tostring' @ > ../../../nuget-advisories.json # write into original directory
+
+      - name: Create Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: nuget-advisories
+          path:
+            nuget-advisories.json
