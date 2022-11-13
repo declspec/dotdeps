@@ -24,7 +24,7 @@ jobs:
           # Find all NuGet-related vulnerabilities
           find -name "*.json" -print0 | xargs -0 -I@ jq -r '. as $root
               | .affected[] 
-              | select((.package.ecosystem | ascii_downcase) == "nuget") 
+              | select((.package.ecosystem | ascii_downcase) == "nuget" and .ranges) 
               | [ $root.severity[0] 
                   + { "id": $root.id, "severity": $root.database_specific.severity, "package": .package.name } 
                   + (reduce .ranges[0].events[] as $e ({}; . + $e)) ]
