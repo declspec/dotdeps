@@ -2,6 +2,8 @@ name: Index GitHub Advisories
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 */12 * * *' # index every 12 hours
 
 env:
   ADVISORY_PATH: docs/advisories/nuget-advisories.json
