@@ -42,13 +42,16 @@ jobs:
         shell: bash
         run: |
           cd "${GITHUB_WORKSPACE}/repo"
+
+          set +e # disable exit-on-error for the diff command
           git diff --quiet "$ADVISORY_PATH"
+          set -e # re-enable exit-on-error
 
           if [[ $? -eq 0 ]]; then
             echo "No changes detected in '${GITHUB_WORKSPACE}/repo/${ADVISORY_PATH}'"
           else
             echo "Updating the repository advisory index"
-            
+
             git config user.name "$GITHUB_ACTOR"
             git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
 
