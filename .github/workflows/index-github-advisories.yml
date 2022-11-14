@@ -18,8 +18,6 @@ jobs:
       - name: Index GitHub Advisory Database
         shell: bash
         run: |
-          set -e
-
           # Shallow copy the advisory database
           git clone --depth 1 --filter=blob:none --sparse https://github.com/github/advisory-database
           cd advisory-database
@@ -27,7 +25,8 @@ jobs:
           git sparse-checkout set advisories/github-reviewed # only care about reviewed advisories
           cd advisories/github-reviewed
 
-          echo "Starting indexing of NuGet-related advisories"
+          totalAdvisories=$(find -name "*.json" | wc -l)
+          echo "Starting indexing of NuGet advisories from ${totalAdvisories} total advisories"
 
           # Find all NuGet-related vulnerabilities
           find -name "*.json" -print0 | xargs -0 -I@ jq -r '. as $root
@@ -36,7 +35,10 @@ jobs:
               | [ $root.severity[0] 
                   + { "id": $root.id, "severity": $root.database_specific.severity, "package": .package.name } 
                   + (reduce .ranges[0].events[] as $e ({}; . + $e)) ]
-              | tostring' @ > "${GITHUB_WORKSPACE}/repo/${ADVISORY_PATH}" # write into original directory
+              | tostring' @ > "${GITHUB_WORKSPACE}/repo/${ADVISORY_PATH}"
+
+          lineCount=$(wc -l "${GITHUB_WORKSPACE}/repo/${ADVISORY_PATH}")
+          echo "Successfully indexed ${lineCount} advisories"
 
       - name: Commit to Repository
         shell: bash
@@ -44,6 +46,7 @@ jobs:
           cd "${GITHUB_WORKSPACE}/repo"
 
           set +e # disable exit-on-error for the diff command
+          git status
           git diff --quiet "$ADVISORY_PATH"
           set -e # re-enable exit-on-error
 
