@@ -7,6 +7,11 @@ jobs:
   index-database:
     runs-on: [ ubuntu-22.04 ]
     steps:
+      - name: Checkout Repository
+        use: actions/checkout@v3
+        with:
+          path: ./repo
+
       - name: Index GitHub Advisory Database
         shell: bash
         run: |
@@ -28,11 +33,19 @@ jobs:
               | [ $root.severity[0] 
                   + { "id": $root.id, "severity": $root.database_specific.severity, "package": .package.name } 
                   + (reduce .ranges[0].events[] as $e ({}; . + $e)) ]
-              | tostring' @ > ../../../nuget-advisories.json # write into original directory
+              | tostring' @ > "${GITHUB_WORKSPACE}/repo/docs/advisories/nuget-advisories.json" # write into original directory
 
-      - name: Create Artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: nuget-advisories
-          path:
-            nuget-advisories.json
+      - name: Commit to Repository
+        shell: bash
+        run: |
+          cd "${GITHUB_WORKSPACE}/repo"
+          git diff --exit-code docs/advisories/nuget-advisories.json
+
+          if [ $? -ne 0 ]; then
+            git config user.name "$GITHUB_ACTOR"
+            git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+
+            git add docs/advisories/nuget-advisories.json
+            git commit -m "(auto): updated the NuGet advisories index"
+            git push
+          fi
