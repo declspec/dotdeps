@@ -2,6 +2,9 @@ name: Index GitHub Advisories
 
 on:
   workflow_dispatch:
+
+env:
+  ADVISORY_PATH: docs/advisories/nuget-advisories.json
     
 jobs:
   index-database:
@@ -33,19 +36,23 @@ jobs:
               | [ $root.severity[0] 
                   + { "id": $root.id, "severity": $root.database_specific.severity, "package": .package.name } 
                   + (reduce .ranges[0].events[] as $e ({}; . + $e)) ]
-              | tostring' @ > "${GITHUB_WORKSPACE}/repo/docs/advisories/nuget-advisories.json" # write into original directory
+              | tostring' @ > "${GITHUB_WORKSPACE}/repo/${ADVISORY_PATH}" # write into original directory
 
       - name: Commit to Repository
         shell: bash
         run: |
           cd "${GITHUB_WORKSPACE}/repo"
-          git diff --exit-code docs/advisories/nuget-advisories.json
+          git diff --quiet "$ADVISORY_PATH"
 
-          if [ $? -ne 0 ]; then
+          if [[ $? -eq 0 ]]; then
+            echo "No changes detected in '${GITHUB_WORKSPACE}/repo/${ADVISORY_PATH}'"
+          else
+            echo "Updating the repository advisory index"
+            
             git config user.name "$GITHUB_ACTOR"
             git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
 
-            git add docs/advisories/nuget-advisories.json
+            git add "$ADVISORY_PATH"
             git commit -m "(auto): updated the NuGet advisories index"
             git push
           fi
