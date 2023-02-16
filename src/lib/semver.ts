@@ -14,7 +14,7 @@ export function compare(v1: string, v2: string) {
 
 export function parse(value: string): [number, number, number, string] {
     const parts = value.split('.', 3);
-    const patch = /^(\d+)(.*)$/.exec(parts[2]);
+    const patch = /^(\d+)(.*)$/.exec(parts[2] || '0');
 
     return [ 
         parseInt(parts[0]), 
