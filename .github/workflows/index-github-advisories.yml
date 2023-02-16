@@ -6,7 +6,7 @@ on:
     - cron: '0 */6 * * *' # index every 6 hours
 
 env:
-  ADVISORY_PATH: docs/advisories/nuget-advisories.json
+  ADVISORY_PATH: advisories/nuget-advisories.json
     
 jobs:
   index-database:
@@ -29,6 +29,9 @@ jobs:
 
           echo "Starting indexing of NuGet advisories"
 
+          docsPath="${GITHUB_WORKSPACE}/repo/docs/${ADVISORY_PATH}"
+          publicPath="${GITHUB_WORKSPACE}/repo/public/${ADVISORY_PATH}"
+
           # Find all NuGet-related vulnerabilities
           find -type f -name "*.json" -exec cat {} + \
             | jq -r '. as $root
@@ -38,9 +41,12 @@ jobs:
                   + { "id": $root.id, "severity": $root.database_specific.severity, "package": .package.name } 
                   + (reduce .ranges[0].events[] as $e ({}; . + $e))' \
             | jq -cs '.' \
-            > "${GITHUB_WORKSPACE}/repo/${ADVISORY_PATH}"
+            > "$docsPath"
 
-          advisoryCount=$(jq -r length < "${GITHUB_WORKSPACE}/repo/${ADVISORY_PATH}")
+          # Keep the build-time advisories in-sync
+          cp "$docsPath" "$publicPath"
+
+          advisoryCount=$(jq -r length < "$docsPath")
           echo "Successfully indexed ${advisoryCount} advisories"
 
       - name: Commit to Repository
@@ -49,19 +55,19 @@ jobs:
           cd "${GITHUB_WORKSPACE}/repo"
 
           set +e # disable exit-on-error for the diff command
-          git diff --quiet "$ADVISORY_PATH"
+          git diff --quiet "*${ADVISORY_PATH}"
           unchanged=$?
           set -e # re-enable exit-on-error
 
           if [[ $unchanged -eq 0 ]]; then
-            echo "No changes detected in '${GITHUB_WORKSPACE}/repo/${ADVISORY_PATH}'"
+            echo "No changes detected in '${GITHUB_WORKSPACE}/repo/docs/${ADVISORY_PATH}'"
           else
             echo "Updating the repository advisory index"
 
             git config user.name "$GITHUB_ACTOR"
             git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
 
-            git add "$ADVISORY_PATH"
+            git add "*${ADVISORY_PATH}"
             git commit -m "(auto): updated the NuGet advisories index"
             git push
           fi

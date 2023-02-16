@@ -11,6 +11,9 @@ export interface ProjectAssets {
   },
   project: {
     version: string;
+    restore: {
+      projectName: string;
+    }
   }
 };
 

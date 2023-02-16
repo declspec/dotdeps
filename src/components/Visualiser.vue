@@ -3,10 +3,22 @@
   import type { ElementsDefinition } from 'cytoscape';
 
   import { createPackageGraph, type ProjectAssets, type PackageGraph, getRootPackageId } from '@/lib/packages';
+  import type { PackageAdvisory } from '@/lib/advisories';
+  import { compare as compareSemver } from '@/lib/semver';
+
   import Cytoscape from './Cytoscape.vue';
 
   export interface Props {
-    projectAssets: ProjectAssets | null
+    projectAssets: ProjectAssets | null;
+    advisories: PackageAdvisory[] | null;
+  };
+
+  export interface DependencySummary {
+    id: string;
+    name: string;
+    resolvedVersion: string;
+    totalVersions: number;
+    advisories: PackageAdvisory[];
   };
 
   const COLOR_PROJECT = '#189b18';
@@ -19,53 +31,8 @@
   });
 
   const elementsRef = ref<ElementsDefinition | null>(null);
-
-  const graphRef = computed(() => {
-    const assets = props.projectAssets;
-
-    if (assets == null)
-      return null;
-
-    const keys = Object.keys(assets.projectFileDependencyGroups);
-
-    return createPackageGraph(assets.targets[keys[0]], {
-      version: assets.project.version,
-      dependencies: assets.projectFileDependencyGroups[keys[0]]
-        .map(s => s.split(' ')[0])
-    });
-  });
-
-  const packagesRef = computed(() => {
-    const graph = graphRef.value;
-
-    if (graph == null)
-      return null;
-
-    const rootPrefix = getRootPackageId() + '/';
-
-    const packageIds = Object.keys(graph)
-      .filter(pid => pid[0] !== '.') // filter out 'hidden' packages (i.e. .root)
-      .sort();
-
-    const packages = packageIds.map(id => {
-      const node = graph[id];
-
-      return {
-        id,
-        name: node.name,
-        resolvedVersion: node.resolvedVersion,
-        totalVersions: Object.keys(node.versionRefs).length,
-        isProjectDependency: node.versionRefs[node.resolvedVersion]
-          .some(id => id.indexOf(rootPrefix) === 0),
-      };
-    });
-
-    return packages.sort((p1, p2) => {
-      return p1.isProjectDependency == p2.isProjectDependency
-        ? p1.name.localeCompare(p2.name)
-        : (p1.isProjectDependency ? -1 : 1);
-    });
-  });
+  const graphRef = computed(computeGraph);
+  const packagesRef = computed(computePackages);
 
   // Clear the current dependency visualisation if the underlying graph changes
   watch(() => graphRef.value, () => elementsRef.value = null);
@@ -80,7 +47,7 @@
     const computedPaths = new Set<string>();
     const start = graph[packageId];
     const nodeMap: { [key: string]: cytoscape.NodeDefinition } = {};
-    const stack: { id: string, version: string }[] = []// = [ { id: packageId, version: packageVersion } ];
+    const stack: { id: string, version: string }[] = []
 
     for (const version of Object.keys(start.versionRefs))
       stack.push({ id: packageId, version });
@@ -149,12 +116,92 @@
     
     elementsRef.value = computeElements(graphRef.value, packageId);
   }
+
+  function computeGraph() {
+    const assets = props.projectAssets;
+
+    if (assets == null)
+      return null;
+
+    const keys = Object.keys(assets.projectFileDependencyGroups);
+
+    // TODO: Allow the package graph to be selected from an available target
+    //  rather than just grabbing the first.
+    return createPackageGraph(assets.targets[keys[0]], {
+      version: assets.project.version,
+      dependencies: assets.projectFileDependencyGroups[keys[0]]
+        .map(s => s.split(' ')[0])
+    });
+  }
+
+  function computePackages() {
+    const graph = graphRef.value;
+
+    if (graph == null)
+      return null;
+
+    const rootPrefix = getRootPackageId() + '/';
+
+    const packageIds = Object.keys(graph)
+      .filter(pid => pid[0] !== '.') // filter out 'hidden' packages (i.e. .root)
+      .sort();
+
+    const projectDeps: DependencySummary[] = [];
+    const transitiveDeps: DependencySummary[] = [];
+    const advisoryDeps: DependencySummary[] = [];
+
+    for (const packageId of packageIds) {
+      const node = graph[packageId];
+
+      const isProjectDependency = node.versionRefs[node.resolvedVersion]
+          .some(id => id.indexOf(rootPrefix) === 0);
+
+      const summary = {
+        id: packageId,
+        name: node.name,
+        resolvedVersion: node.resolvedVersion,
+        totalVersions: Object.keys(node.versionRefs).length,
+        advisories: calculatePackageAdvisories(packageId, node.resolvedVersion)
+      };
+
+      (isProjectDependency ? projectDeps : transitiveDeps).push(summary);
+
+      if (summary.advisories.length > 0)
+        advisoryDeps.push(summary);
+    }
+
+    return {
+      project: projectDeps,
+      transitive: transitiveDeps,
+      advisories: advisoryDeps
+    };
+  }
+
+  function calculatePackageAdvisories(packageId: string, resolvedVersion: string): PackageAdvisory[] {
+    if (props.advisories == null)
+      return [];
+
+    return props.advisories.filter(advisory => advisory.package.toLowerCase() == packageId
+        && (advisory.introduced == '0' || compareSemver(advisory.introduced, resolvedVersion) <= 0)
+        && (advisory.fixed == null || compareSemver(advisory.fixed, resolvedVersion) > 0)
+    );
+  }
 </script>
 
 <template>
   <div class="visualiser" v-if="packagesRef">
     <ul class="packages">
-      <li v-for="pkg in packagesRef" :title="pkg.name" :class="{ 'project': pkg.isProjectDependency }" @click.prevent="renderDependencies(pkg.id)">
+      <li class="headline alert">Outstanding Advisories</li>
+      <li v-if="!packagesRef.advisories.length">No advisories found!</li>
+      <li v-for="pkg in packagesRef.advisories" :title="pkg.advisories.map(a => a.id).join(' ')" @click.prevent="renderDependencies(pkg.id)" :class="{ advisory: pkg.advisories.length > 0 }">
+        <span class="package-name">{{ pkg.name }}</span> <span class="package-version">{{ pkg.resolvedVersion }}</span> <sup class="extra-versions" v-if="pkg.totalVersions > 1">+{{ pkg.totalVersions - 1 }}</sup>
+      </li>
+      <li class="headline">Project Dependencies</li>
+      <li v-for="pkg in packagesRef.project" :title="pkg.name" @click.prevent="renderDependencies(pkg.id)" :class="{ advisory: pkg.advisories.length > 0 }">
+        <span class="package-name">{{ pkg.name }}</span> <span class="package-version">{{ pkg.resolvedVersion }}</span> <sup class="extra-versions" v-if="pkg.totalVersions > 1">+{{ pkg.totalVersions - 1 }}</sup>
+      </li>
+      <li class="headline">Transitive Dependencies</li>
+      <li v-for="pkg in packagesRef.transitive" :title="pkg.name" @click.prevent="renderDependencies(pkg.id)" :class="{ advisory: pkg.advisories.length > 0 }">
         <span class="package-name">{{ pkg.name }}</span> <span class="package-version">{{ pkg.resolvedVersion }}</span> <sup class="extra-versions" v-if="pkg.totalVersions > 1">+{{ pkg.totalVersions - 1 }}</sup>
       </li>
     </ul>
@@ -181,23 +228,36 @@
     overflow-y: auto;
     overflow-x: hidden;
     text-overflow: ellipsis;
-    padding: 1rem 1.5rem 1rem;
+    padding: 1rem;
     margin: 0;
+  }
+
+  .packages li.headline {
+    margin-left: 0rem;
+    cursor: default;
+    margin-top: 1rem;
+    
+    color: white;
+    text-transform: uppercase;
+  }
+
+  .packages li.headline:first-child {
+    margin-top: 0;
   }
 
   .packages li {
     list-style: none;
-    margin: 0.3rem 0;
+    margin: 0.3rem 0 0.3rem 1rem;
     padding: 0;
     position: relative;
     cursor: pointer;
   }
 
-  .packages li.project::before {
-    content: 'P';
+  .packages li.advisory::before {
+    content: '!';
     position: absolute;
     font-family: 'Courier New', Courier, monospace;
-    color: #189b18;
+    color: red;
     font-size: 1rem;
     font-weight: bold;
     left: -1rem;
