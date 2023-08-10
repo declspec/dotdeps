@@ -45,7 +45,7 @@
           style: {
             'label': 'data(name)',
             'background-color': 'data(color)',
-            'color': 'white',
+            'color': 'black',
             'font-size': '0.8em',
             'text-valign': 'center'
           }
@@ -55,7 +55,7 @@
           style: {
             'width': 2,
             'label': 'data(label)',
-            'color': 'white',
+            'color': 'black',
             'line-color': 'data(color)',
             'target-arrow-color': 'data(color)',
             'target-arrow-shape': 'vee',
