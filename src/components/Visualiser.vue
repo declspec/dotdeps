@@ -2,11 +2,12 @@
   import { withDefaults, computed } from 'vue';
   import type { ElementsDefinition } from 'cytoscape';
 
-  import { type PackageGraph, getRootPackageId } from '@/lib/packages';
+  import { type PackageGraph } from '@/lib/packages';
 
   import Cytoscape from './Cytoscape.vue';
 
   export interface Props {
+    projectId: string | null;
     graph: PackageGraph | null;
     packageId: string | null;
   };
@@ -17,6 +18,7 @@
   const COLOR_TARGET = '#ffd507';
 
   const props = withDefaults(defineProps<Props>(), {
+    projectId: null,
     graph: null,
     packageId: null
   });
@@ -26,16 +28,16 @@
   function computeElements(): ElementsDefinition | null {
     const graph = props.graph;
     const packageId = props.packageId;
+    const rootId = props.projectId;
 
-    if (graph == null || packageId == null)
+    if (graph == null || packageId == null || rootId == null)
       return null;
 
     const elements: ElementsDefinition = {
       edges: [],
       nodes: []
     };
-
-    const rootId = getRootPackageId();
+    
     const computedPaths = new Set<string>();
     const nodeMap: { [key: string]: cytoscape.NodeDefinition } = {};
     const stack: string[] = [ packageId ];

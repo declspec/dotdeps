@@ -7,8 +7,8 @@
     <div class="content" @dragover.prevent @drop="onDrop">
       <p v-if="!graphRef" class="help">Please drag and drop a <pre>project.assets.json</pre> file into the window to begin.</p>
       <div v-else class="visualiser">
-        <PackageList :graph="graphRef" :advisories="advisoriesRef" @package-selected="onPackageSelected" class="package-list" />
-        <Visualiser :graph="graphRef" :package-id="selectedPackageRef?.id" class="graph" />
+        <PackageList :project-id="projectIdRef" :graph="graphRef" :advisories="advisoriesRef" @package-selected="onPackageSelected" class="package-list" />
+        <Visualiser :project-id="projectIdRef" :graph="graphRef" :package-id="selectedPackageRef?.id" class="graph" />
       </div>
     </div>
   </div>
@@ -19,13 +19,14 @@
   import type { PackageAdvisory } from './lib/advisories';
 
   import { ref } from 'vue';
-  import { createPackageGraph } from './lib/packages';
+  import { createPackageGraph, getPackageId } from './lib/packages';
   
   import Visualiser from './components/Visualiser.vue';
   import PackageList from './components/PackageList.vue';
 
   const graphRef = ref<PackageGraph | null>(null);
   const projectAssetsRef = ref<ProjectAssets | null>(null);
+  const projectIdRef = ref<string | null>(null);
   const advisoriesRef = ref<PackageAdvisory[] | null>(null);
   const selectedPackageRef = ref<{ id: string } | null>(null);
 
@@ -52,11 +53,13 @@
           const json = await file.text();
 
           const assets = JSON.parse(json) as ProjectAssets;
-          const keys = Object.keys(assets.projectFileDependencyGroups);
-
           projectAssetsRef.value = assets;
 
-          graphRef.value = createPackageGraph(assets, null!);
+          const projectName = assets.project.restore.projectName;
+          const projectId = getPackageId(projectName);
+
+          projectIdRef.value = projectId;
+          graphRef.value = createPackageGraph(projectId, projectName, assets, null!);
         }
       });
     }

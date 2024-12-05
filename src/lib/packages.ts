@@ -32,7 +32,7 @@ export interface ResolvedPackageHash {
 };
 
 export interface ResolvedPackage {
-  type: "package" | "project";
+  type: 'package' | 'project';
   dependencies?: {
     [key: PackageId]: VersionNumber
   };
@@ -59,62 +59,56 @@ export interface Project {
   dependencies: string[];
 }
 
-export function getRootPackageId() {
-  return '.root';
+export function getPackageId(packageName: string) {
+  return packageName.toLowerCase();
 }
 
-export function createPackageGraph(assets: ProjectAssets, targetFramework: string): PackageGraph {
+export function createPackageGraph(projectId: string, projectName: string, assets: ProjectAssets, targetFramework: string): PackageGraph {
   // TODO: Actually do TFM lookup / parsing
   const project = assets.project;
   const frameworkName = Object.keys(assets.targets)[0];
-  const projectFileDependencyGroups = assets.projectFileDependencyGroups[frameworkName];
   const target = assets.targets[frameworkName];
   const framework = project.frameworks[Object.keys(project.frameworks)[0]];
   
   // Create a graph by traversing the top level resolved packages and
   //  determining where they are referenced from
   const graph: PackageGraph = {};
-
-  const rootId = getRootPackageId();
-  const projectNode = getOrAddGraphNode(graph, rootId);
+  const projectNode = getOrAddGraphNode(graph, projectId, projectName);
 
   for (const [ packageName, ref ] of Object.entries(framework.dependencies)) {
     projectNode.dependencies.push({
-      id: packageName.toLowerCase(),
-      versionRange: ref.version.replace(/\s+/g, '')
+      id: getPackageId(packageName),
+      versionRange: normalizeVersionRange(ref.version)
     });
   }
 
-  // NOTE: This is a big kludge to pick up the project dependencies since
-  //  for some reason the projectFileDependencyGroups uses a different format to the rest of the version ranges
-  for (const dependencyString of projectFileDependencyGroups) {
-    const parts = dependencyString.split(/\s+/g);
-    const depId = parts[0].toLowerCase();
-    
-    if (!projectNode.dependencies.some(d => d.id === depId)) {
-      projectNode.dependencies.push({ id: depId, versionRange: parts[parts.length - 1]});
-    }
-  }
-  
   for (const [packageKey, pkg] of Object.entries(target)) {
     const [packageName, packageVersion] = packageKey.split('/');
-    const packageId = packageName.toLowerCase();
-
-    const packageNode = getOrAddGraphNode(graph, packageName);
+    const packageId = getPackageId(packageName);
+    const packageNode = getOrAddGraphNode(graph, packageId, packageName);
     packageNode.version = packageVersion; // this is the canonical version, override any placeholder version
+
+    // If it's a project reference, add it as a direct dependency of the project node
+    if (pkg.type === 'project' && !projectNode.dependencies.some(d => d.id === packageId)) {
+      const normalizedVersion = normalizeVersionRange(`[${packageVersion}]`);
+      projectNode.dependencies.push({ id: packageId, versionRange: normalizedVersion });
+    }
 
     // Check if there is a direct project reference to the current package
     const projectRef = projectNode.dependencies.find(dep => dep.id === packageId);
 
     if (projectRef != null) {
-      packageNode.references.push({ id: rootId, versionRange: projectRef.versionRange });
+      packageNode.references.push({ id: projectId, versionRange: projectRef.versionRange });
     }
 
     if (pkg.dependencies != null) {
       for (const [depName, depVersionRange] of Object.entries(pkg.dependencies)) {
-        const depNode = getOrAddGraphNode(graph, depName);
-        depNode.references.push({ id: packageId, versionRange: depVersionRange });
-        packageNode.dependencies.push({ id: depName.toLowerCase(), versionRange: depVersionRange });
+        const depId = getPackageId(depName);
+        const depNode = getOrAddGraphNode(graph, depId, depName);
+        const normalizedVersion = normalizeVersionRange(depVersionRange);
+
+        depNode.references.push({ id: packageId, versionRange: normalizedVersion });
+        packageNode.dependencies.push({ id: depId, versionRange: normalizedVersion });
       }
     }
   }
@@ -122,10 +116,37 @@ export function createPackageGraph(assets: ProjectAssets, targetFramework: strin
   return graph;
 }
 
-function getOrAddGraphNode(graph: PackageGraph, packageName: string): PackageNode {
-  const graphKey = packageName.toLowerCase();
+// Convert NuGet version ranges into something more readable
+//  ref: https://learn.microsoft.com/en-us/nuget/concepts/package-versioning?tabs=semver20sort#version-ranges
+function normalizeVersionRange(rawVersionRange: string) {
+  const [lower,upper] = rawVersionRange.replace(/\s+/g, '').split(',');
+  const ranges: string[] = [];
 
-  return graph[graphKey] || (graph[graphKey] = {
+  // check for exact version match
+  if (upper == null && lower.startsWith('[') && lower.endsWith(']'))
+    return `= ${lower.substring(1, lower.length - 1)}`;
+
+  if (lower.length > 1) {
+    let inclusive = true;
+    let offset = 0;
+
+    if (lower[0] === '(' || lower[0] === '[') {
+        inclusive = lower[0] !== '(';
+        ++offset;
+    }
+
+    ranges.push(`${inclusive ? '>=' : '>'} ${lower.substring(offset)}`);
+  }
+
+  if (upper != null && upper.length > 1) {
+    ranges.push(`${upper[upper.length - 1] === ')' ? '<' : '<='} ${upper.substring(0, upper.length - 1)}`);
+  }
+  
+  return ranges.join(', ');
+}
+
+function getOrAddGraphNode(graph: PackageGraph, packageId: string, packageName: string): PackageNode {
+  return graph[packageId] || (graph[packageId] = {
     name: packageName,
     version: '0.0.0',
     dependencies: [],

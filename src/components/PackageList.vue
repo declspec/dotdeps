@@ -91,12 +91,12 @@
   import type { PackageGraph } from '@/lib/packages';
 
   import { withDefaults, computed, ref } from 'vue';
-  import { getRootPackageId } from '@/lib/packages';
   import { compare as compareSemver } from '@/lib/semver';
 
   import Octicon from './Octicon.vue';
 
   export interface Props {
+    projectId: string | null;
     graph: PackageGraph | null;
     advisories: PackageAdvisory[] | null;
   };
@@ -124,6 +124,7 @@
   };
 
   const props = withDefaults(defineProps<Props>(), {
+    projectId: null,
     graph: null,
     advisories: null
   });
@@ -151,14 +152,13 @@
 
   function computePackages(): PackageSummary[] | null {
     const graph = props.graph;
+    const rootId = props.projectId;
 
-    if (graph == null)
+    if (graph == null || rootId == null)
       return null;
 
-    const rootId = getRootPackageId();
-
     const packages = Object.keys(graph)
-      .filter(pid => pid[0] !== '.') // filter out 'hidden' packages (i.e. .root);
+      .filter(pid => pid !== rootId) // filter out the root package from the list
       .map(pid => {
         const node = graph[pid];
 
