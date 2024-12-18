@@ -16,24 +16,7 @@
   const nodeRef = ref<VNodeRef | null>(null);
   const cyRef = ref<cytoscape.Core | null>(null);
 
-  watch(() => props.elements, elements => {
-    if (cyRef.value != null) {
-      const cy = cyRef.value;
-      cy.elements().remove();
-
-      if (elements != null) {
-        cy.add(elements);
-
-        const layout = cy.layout({
-          name: 'dagre',
-          avoidOverlap: true,
-          nodeDimensionsIncludeLabels: true
-        } as any);
-
-        layout.run();
-      }
-    }
-  });
+  watch(() => props.elements, updateElements);
 
   onMounted(() => {
     cyRef.value = cytoscape({
@@ -65,7 +48,28 @@
         }
       ]
     });
+
+    updateElements(props.elements);
   });
+
+  function updateElements(elements: ElementsDefinition | null) {
+    if (cyRef.value != null) {
+      const cy = cyRef.value;
+      cy.elements().remove();
+
+      if (elements != null) {
+        cy.add(elements);
+
+        const layout = cy.layout({
+          name: 'dagre',
+          avoidOverlap: true,
+          nodeDimensionsIncludeLabels: true
+        } as any);
+
+        layout.run();
+      }
+    }
+  }
 </script>
 
 <template>

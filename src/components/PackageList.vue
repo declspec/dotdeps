@@ -1,8 +1,17 @@
 <template>
-  <div class="packages" v-if="packagesRef">
+  <div class="packages" v-if="packagesRef" :class="{'has-advisories': totalVulnerablePackages > 0}">
+    <h4 class="title"><label for="package-search">Search</label></h4>
+    <div class="search" :class="{'filtering-advisories': filtersRef.hasAdvisories}">
+      <input name="package-search" v-model="filtersRef.search" />
+      <button type="button" v-if="totalVulnerablePackages" :title="totalVulnerablePackages + ' packages with vulnerabilities'" @click="filtersRef.hasAdvisories = filtersRef.hasAdvisories ? null : true">
+        <Octicon name="alert" :size="24" />
+        <sup>{{totalVulnerablePackages}}</sup>
+      </button>
+    </div>
+    <h4 class="title">Packages</h4>
     <div class="package" v-for="pkg in filteredPackages" :class="{'project': pkg.isProjectDependency, 'transitive': !pkg.isProjectDependency, 'advisory': pkg.advisories.length > 0 }">
       <div class="banner"></div>
-      <span class="package-name anchor" @click="onPackageSelected(pkg)">{{ pkg.name }}</span>
+      <span class="package-name anchor" @click="onPackageSelected(pkg)" :title="pkg.name">{{ pkg.name }}</span>
       <div class="attributes">
         <span class="attribute version" :title="(pkg.isProjectDependency ? 'Project' : 'Transitive') + ' dependency'"><Octicon :size="16" :name="pkg.advisories.length ? 'alert-fill' : 'check-circle-fill'" /> {{ pkg.version }}</span>
         <span class="attribute" title="Package dependencies"><Octicon name="package-dependencies" :size="16" /> {{ pkg.dependencies.length }}</span>
@@ -15,11 +24,69 @@
           :title="advisory.score">{{ advisory.id }} ({{ advisory.severity }})</a>
       </div>
     </div>
+    <div v-if="!filteredPackages || filteredPackages.length === 0">
+      <p>No packages found</p>
+    </div>
   </div>
 </template>
 
 <style scoped lang="scss">
   .packages {
+    min-height: 100%;
+    box-sizing: border-box;
+    resize: horizontal;
+    width: 400px;
+    background-color: #efefef;
+
+    .title {
+      margin: 0.375rem 0;
+      font-weight: 500;
+
+      &:first-child {
+        margin-top: 0;
+      }
+    }
+
+    .search {
+      display: block;
+      position: relative;
+
+      input {
+        padding: 0.75rem;
+        display: block;
+        width: 100%;
+        border-radius: 6px;
+      }
+
+      button {
+        position: absolute;
+        right: 0.5rem;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: 1px solid transparent;
+        border-radius: 6px;
+      }
+
+      button:hover {
+        background: #eee;
+        border: 1px solid #666;
+      }
+
+      &.filtering-advisories {
+        button {
+          background: #eee;
+          border: 1px solid #666;
+        }
+      }
+    }
+
+    &.has-advisories {
+      .search input {
+        padding-right: 80px;
+      }
+    }
+
     .package {
       padding: 0.375rem;
       padding-left: 0.8750rem;
@@ -34,6 +101,10 @@
     .package-name {
       display: block;
       font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      width: 100%;
     }
 
     .banner {
@@ -129,9 +200,11 @@
     advisories: null
   });
 
-  const packagesRef = computed(computePackages);
-  const filteredPackages = computed(filterPackages);
   const filtersRef = ref<PackageFilters>({ search: null, isProjectDependency: null, hasAdvisories: null });
+  const packagesRef = computed(computePackages);
+  const filteredPackages = computed(filterPackages,);
+  const totalVulnerablePackages = computed(countVulnerablePackages);
+  
   const emit = defineEmits(['packageSelected']);
 
   function onPackageSelected(pkg: PackageSummary) {
@@ -148,6 +221,12 @@
     return packages.filter(p => (filters.search == null || p.id.indexOf(filters.search.toLowerCase()) >= 0)
       && (filters.hasAdvisories == null || (filters.hasAdvisories ? p.advisories.length > 0 : p.advisories.length === 0))
       && (filters.isProjectDependency == null || (p.isProjectDependency == filters.isProjectDependency)));
+  }
+
+  function countVulnerablePackages(): number {
+    return filteredPackages.value != null
+      ? filteredPackages.value.reduce((total, pkg) => total + (pkg.advisories.length > 0 ? 1 : 0), 0)
+      : 0;
   }
 
   function computePackages(): PackageSummary[] | null {
@@ -168,7 +247,7 @@
           isProjectDependency: node.references.some(r => r.id === rootId),
           version: node.version,
           totalReferences: node.references.length,
-          advisories: calculatePackageAdvisories(pid, node.version),
+          advisories: computePackageAdvisories(pid, node.version),
           dependencies: node.dependencies.map(dep => {
             const depNode = graph[dep.id];
             return <Dependency>({ id: dep.id, name: depNode.name, versionRange: dep.versionRange });
@@ -181,7 +260,7 @@
         : (a.isProjectDependency ? -1 : 1));
   }
 
-  function calculatePackageAdvisories(packageId: string, resolvedVersion: string): PackageAdvisory[] {
+  function computePackageAdvisories(packageId: string, resolvedVersion: string): PackageAdvisory[] {
     if (props.advisories == null)
       return [];
 

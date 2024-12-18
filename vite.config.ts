@@ -9,7 +9,15 @@ export default defineConfig({
   plugins: [vue()],
   base: '', // relative
   build: {
-    outDir: './docs'
+    outDir: './docs',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          cytoscape: ['cytoscape'],
+          octicons: ['@primer/octicons']
+        }
+      }
+    }
   },
   resolve: {
     alias: {

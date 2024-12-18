@@ -2,7 +2,7 @@
   <div class="main">
     <nav class="header">
       <h3 v-if="!projectAssetsRef">.NET Dependency Visualiser</h3>
-      <h3 v-else>Visualising Dependencies for {{ projectAssetsRef.project.restore.projectName }}</h3>
+      <h3 v-else>Dependencies for {{ projectAssetsRef.project.restore.projectName }}</h3>
     </nav>
     <div class="content" @dragover.prevent @drop="onDrop">
       <p v-if="!graphRef" class="help">Please drag and drop a <pre>project.assets.json</pre> file into the window to begin.</p>
@@ -76,10 +76,14 @@
 
   .main .header {
     flex: 0 0 auto;
-    background-color: #3c5e8d;
-    min-height: 3rem;
-    text-align: center;
-    color: white;
+    background-color: rgb(4, 98, 152);
+
+    h3 {
+      text-align: center;
+      margin: 0.5rem;
+      color: white;
+      font-weight: 500;
+    }
   }
 
   .main .content {
